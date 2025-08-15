@@ -1,0 +1,559 @@
+openapi: 3.0.3
+info:
+  title: Agent-Reg - A2A Agent Registry
+  description: |
+    A registry service for A2A-compliant agents. This API allows registering, 
+    discovering, updating, and managing agent records with schema validation.
+  version: 1.0.0
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+tags:
+  - name: agents
+    description: Agent management operations
+  - name: utility
+    description: Utility endpoints
+
+paths:
+  /agents/register:
+    post:
+      tags:
+        - agents
+      summary: Register a new agent
+      description: |
+        Register a new agent by providing an Agent Card. The registry stores 
+        the card and returns the persistent Agent record (including generated 
+        id and timestamps).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCard'
+      responses:
+        '201':
+          description: Agent successfully registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /agents:
+    get:
+      tags:
+        - agents
+      summary: List and search agents
+      description: |
+        List and search agents with optional filtering by skill, name, 
+        owner, capabilities, and liveness.
+      parameters:
+        - name: skill
+          in: query
+          schema:
+            type: string
+          description: Filter by skill ID
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Filter by name (partial match)
+        - name: owner
+          in: query
+          schema:
+            type: string
+          description: Filter by owner
+        - name: streaming
+          in: query
+          schema:
+            type: boolean
+        - name: push_notifications
+          in: query
+          schema:
+            type: boolean
+          description: Filter by push notifications capability
+        - name: state_transition_history
+          in: query
+          schema:
+            type: boolean
+          description: Filter by state transition history capability
+        - name: only_alive
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Filter only agents with heartbeat in last 5 minutes
+      responses:
+        '200':
+          description: List of agents matching criteria
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Agent'
+
+  /agents/{agent_id}:
+    get:
+      tags:
+        - agents
+      summary: Get a specific agent
+      description: Retrieve an agent's details by ID
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The agent's unique identifier
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          description: Agent not found
+    put:
+      tags:
+        - agents
+      summary: Update an agent
+      description: Update an agent's details
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The agent's unique identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentUpdate'
+      responses:
+        '200':
+          description: Updated agent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          description: Agent not found
+    delete:
+      tags:
+        - agents
+      summary: Delete an agent
+      description: Remove an agent from the registry
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The agent's unique identifier
+      responses:
+        '204':
+          description: Agent successfully deleted
+        '404':
+          description: Agent not found
+
+  /agents/{agent_id}/heartbeat:
+    post:
+      tags:
+        - agents
+      summary: Update agent liveness
+      description: |
+        Agent calls this endpoint periodically to update its last_heartbeat.
+        This helps the registry mark agents as alive or stale.
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The agent's unique identifier
+      responses:
+        '200':
+          description: Heartbeat successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          description: Agent not found
+
+  /agents/{agent_id}/invoke_url:
+    get:
+      tags:
+        - utility
+      summary: Get agent invocation URL
+      description: |
+        Return the agent's invocation URL and summarized invocation guidance.
+        The client should use the returned URL and follow the A2A protocol 
+        (JSON-RPC over HTTPS) to invoke the agent.
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The agent's unique identifier
+      responses:
+        '200':
+          description: Agent invocation details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  invoke_url:
+                    type: string
+                  note:
+                    type: string
+                  agent_card:
+                    type: object
+        '404':
+          description: Agent not found
+
+  /health:
+    get:
+      tags:
+        - utility
+      summary: Health check
+      description: Check if the API is up and running
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  time:
+                    type: string
+                    format: date-time
+
+components:
+  schemas:
+    AgentExtension:
+      type: object
+      required:
+        - uri
+      properties:
+        uri:
+          type: string
+          description: The unique URI identifying the extension
+        description:
+          type: string
+          description: A human-readable description of how this agent uses the extension
+        required:
+          type: boolean
+          description: If true, the client must understand and comply with the extension's requirements
+        params:
+          type: object
+          description: Optional, extension-specific configuration parameters
+
+    AgentCapabilities:
+      type: object
+      properties:
+        streaming:
+          type: boolean
+          description: Indicates if the agent supports Server-Sent Events (SSE) for streaming responses
+        stateTransitionHistory:
+          type: boolean
+          description: Indicates if the agent provides a history of state transitions for a task
+        pushNotifications:
+          type: boolean
+          description: Indicates if the agent supports sending push notifications for asynchronous task updates
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentExtension'
+          description: A list of protocol extensions supported by the agent
+
+    AgentProvider:
+      type: object
+      required:
+        - organization
+        - url
+      properties:
+        organization:
+          type: string
+          description: The name of the agent provider's organization
+        url:
+          type: string
+          description: A URL for the agent provider's website or documentation
+
+    AgentInterface:
+      type: object
+      required:
+        - url
+        - transport
+      properties:
+        url:
+          type: string
+          description: The URL where this interface is available
+        transport:
+          type: string
+          description: The transport protocol supported at this URL
+
+    AgentCardSignature:
+      type: object
+      required:
+        - protected
+        - signature
+      properties:
+        protected:
+          type: string
+          description: The protected JWS header for the signature
+        signature:
+          type: string
+          description: The computed signature, Base64url-encoded
+        header:
+          type: object
+          description: The unprotected JWS header values
+
+    AgentSkill:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - tags
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the agent's skill
+        name:
+          type: string
+          description: A human-readable name for the skill
+        description:
+          type: string
+          description: A detailed description of the skill
+        tags:
+          type: array
+          items:
+            type: string
+          description: A set of keywords describing the skill's capabilities
+        examples:
+          type: array
+          items:
+            type: string
+          description: Example prompts or scenarios that this skill can handle
+        inputModes:
+          type: array
+          items:
+            type: string
+          description: The set of supported input MIME types for this skill
+        outputModes:
+          type: array
+          items:
+            type: string
+          description: The set of supported output MIME types for this skill
+        security:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: array
+              items:
+                type: string
+          description: Security schemes necessary for the agent to leverage this skill
+
+    AgentCard:
+      type: object
+      required:
+        - name
+        - description
+        - version
+        - protocolVersion
+        - url
+        - skills
+        - capabilities
+        - defaultInputModes
+        - defaultOutputModes
+      properties:
+        name:
+          type: string
+          description: A human-readable name for the agent
+        description:
+          type: string
+          description: A human-readable description of the agent
+        version:
+          type: string
+          description: The agent's own version number
+        protocolVersion:
+          type: string
+          description: The version of the A2A protocol this agent supports
+        url:
+          type: string
+          description: The preferred endpoint URL for interacting with the agent
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSkill'
+          description: The set of skills that the agent can perform
+        capabilities:
+          $ref: '#/components/schemas/AgentCapabilities'
+          description: A declaration of optional capabilities supported by the agent
+        defaultInputModes:
+          type: array
+          items:
+            type: string
+          description: Default set of supported input MIME types for all skills
+        defaultOutputModes:
+          type: array
+          items:
+            type: string
+          description: Default set of supported output MIME types for all skills
+        preferredTransport:
+          type: string
+          default: JSONRPC
+          description: The transport protocol for the preferred endpoint
+        provider:
+          $ref: '#/components/schemas/AgentProvider'
+          description: Information about the agent's service provider
+        documentationUrl:
+          type: string
+          description: An optional URL to the agent's documentation
+        iconUrl:
+          type: string
+          description: An optional URL to an icon for the agent
+        additionalInterfaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentInterface'
+          description: A list of additional supported interfaces
+        security:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: array
+              items:
+                type: string
+          description: Security requirement objects that apply to all agent interactions
+        securitySchemes:
+          type: object
+          description: A declaration of the security schemes available to authorize requests
+        signatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentCardSignature'
+          description: JSON Web Signatures computed for this AgentCard
+        supportsAuthenticatedExtendedCard:
+          type: boolean
+          description: If true, the agent can provide an extended agent card to authenticated users
+
+    AgentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: A human-readable name for the agent
+        description:
+          type: string
+          description: A human-readable description of the agent
+        url:
+          type: string
+          format: uri
+          description: The preferred endpoint URL for interacting with the agent
+        version:
+          type: string
+          description: The agent's own version number
+        protocolVersion:
+          type: string
+          description: The version of the A2A protocol this agent supports
+        capabilities:
+          type: object
+          description: A declaration of optional capabilities supported by the agent
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSkill'
+          description: The set of skills that the agent can perform
+
+    Agent:
+      type: object
+      required:
+        - id
+        - url
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the agent
+        name:
+          type: string
+          description: A human-readable name for the agent
+        description:
+          type: string
+          description: A human-readable description of the agent
+        url:
+          type: string
+          description: The preferred endpoint URL for interacting with the agent
+        version:
+          type: string
+          description: The agent's own version number
+        protocolVersion:
+          type: string
+          description: The version of the A2A protocol this agent supports
+        capabilities:
+          type: object
+          description: A declaration of optional capabilities supported by the agent
+        skills:
+          type: array
+          items:
+            type: object
+          description: The set of skills that the agent can perform
+        owner:
+          type: string
+          description: The owner of the agent
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the agent was created
+        last_heartbeat:
+          type: string
+          format: date-time
+          description: Timestamp of the agent's last heartbeat
+
+    ValidationError:
+      type: object
+      properties:
+        loc:
+          type: array
+          items:
+            type: string
+          description: Location of the validation error
+        msg:
+          type: string
+          description: Error message
+        type:
+          type: string
+          description: Error type
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/ValidationError'
+          description: Validation error details

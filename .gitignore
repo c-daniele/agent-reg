@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+.DS_Store
+backend/app/src/agent_hub_nosql.json
+backend/app/src/*.db
