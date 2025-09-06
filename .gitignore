@@ -208,3 +208,6 @@ __marimo__/
 .DS_Store
 backend/app/src/agent_hub_nosql.json
 backend/app/src/*.db
+backend/app/agent_reg.db
+WARP.md
+backend/app/test/02.list_agents.sh

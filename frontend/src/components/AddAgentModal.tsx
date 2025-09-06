@@ -89,6 +89,7 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAgentA
       
       const response = await fetch(wellKnownUri.trim());
       if (!response.ok) {
+        console.error('Failed to fetch agent card:', response);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
