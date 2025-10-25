@@ -4,3 +4,4 @@ sqlmodel==0.0.24
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 jsonschema==4.25.0
+mcp[cli]==1.19.0

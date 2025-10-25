@@ -25,11 +25,16 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, Path, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, HttpUrl
-from database import AgentDatabase
+from .database import AgentDatabase
 from jsonschema import ValidationError
 import logging as logger
-from agent_card_validator import AgentCardValidator
-from agent_card_models import AgentCreate, AgentUpdate
+from .agent_card_validator import AgentCardValidator
+from .agent_card_models import AgentCreate, AgentUpdate
+from .mcp_models import (
+    MCPServerRegister, MCPServerResponse, MCPSearchQuery,
+    MCPSearchResult, MCPServerCapabilities
+)
+from .mcp_client import MCPClient, MCPClientError, test_mcp_connection
 
 from dotenv import load_dotenv
 
@@ -186,6 +191,174 @@ def delete_agent(agent_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Agent not found")
     return None
+
+
+# -----------------------------
+# MCP Server Management Routes
+# -----------------------------
+
+@app.post("/mcp/servers/register", status_code=status.HTTP_201_CREATED)
+async def register_mcp_server(server_data: MCPServerRegister):
+    """
+    Register a new MCP server
+
+    This endpoint:
+    1. Validates the MCP server configuration
+    2. Performs handshake with the MCP server to verify availability
+    3. Discovers server capabilities (tools, resources, prompts)
+    4. Stores the server details and capabilities in the database
+    5. Returns the registered server ID and full details
+    """
+    # Get configuration from the request
+    config = server_data.get_config()
+
+    # Test connection and discover capabilities
+    try:
+        client = MCPClient(server_data.type, config)
+        capabilities = await client.discover_capabilities()
+    except MCPClientError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Failed to connect to MCP server: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error connecting to MCP server: {str(e)}"
+        )
+
+    # Generate server ID and store in database
+    server_id = str(uuid4())
+
+    try:
+        result = db.insert_mcp_server(
+            server_id=server_id,
+            server_type=server_data.type,
+            description=server_data.description,
+            config=config,
+            capabilities=capabilities.model_dump()
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store MCP server: {str(e)}"
+        )
+
+
+@app.get("/mcp/servers")
+def list_mcp_servers(
+    server_type: Optional[str] = Query(None, description="Filter by server type (stdio, http, sse)"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status (active, inactive, error)")
+):
+    """
+    List all registered MCP servers with their capabilities
+
+    Optional filters:
+    - server_type: Filter by transport type (stdio, http, sse)
+    - status: Filter by server status (active, inactive, error)
+    """
+    try:
+        servers = db.list_mcp_servers(server_type=server_type, status=status_filter)
+        return servers
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list MCP servers: {str(e)}"
+        )
+
+
+@app.get("/mcp/servers/{server_id}")
+def get_mcp_server(server_id: str = Path(..., description="MCP Server ID")):
+    """
+    Get detailed information about a specific MCP server including its capabilities
+    """
+    result = db.get_mcp_server(server_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    return result
+
+
+@app.get("/mcp/search")
+def search_mcp_capabilities(
+    query: Optional[str] = Query(None, description="Search query string"),
+    capability_type: Optional[str] = Query(None, description="Filter by capability type (tool, resource, prompt)"),
+    server_type: Optional[str] = Query(None, description="Filter by server type (stdio, http, sse)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results")
+):
+    """
+    Search for tools, resources, or prompts across all registered MCP servers
+
+    This endpoint searches across all active MCP servers and returns:
+    - Matched servers with their configuration
+    - The specific capabilities (tools/resources/prompts) that matched the query
+
+    Query parameters:
+    - query: Keywords to search for in capability names and descriptions
+    - capability_type: Narrow search to specific capability type (tool, resource, prompt)
+    - server_type: Filter by server transport type (stdio, http, sse)
+    - limit: Maximum number of results to return (default: 100)
+    """
+    try:
+        results = db.search_mcp_capabilities(
+            query=query,
+            capability_type=capability_type,
+            server_type=server_type,
+            limit=limit
+        )
+        return results
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to search MCP capabilities: {str(e)}"
+        )
+
+
+@app.delete("/mcp/servers/{server_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_mcp_server(server_id: str = Path(..., description="MCP Server ID")):
+    """
+    Delete an MCP server and all its associated capabilities
+    """
+    success = db.delete_mcp_server(server_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    return None
+
+
+@app.post("/mcp/servers/{server_id}/verify")
+async def verify_mcp_server(server_id: str = Path(..., description="MCP Server ID")):
+    """
+    Verify connection to an MCP server and update its status
+
+    This endpoint attempts to reconnect to the server and update:
+    - Server status (active, inactive, error)
+    - Last verification timestamp
+    """
+    server = db.get_mcp_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+
+    try:
+        client = MCPClient(server['type'], server['config'])
+        capabilities = await client.discover_capabilities()
+
+        # Update status to active
+        db.update_mcp_server_status(server_id, 'active')
+
+        return {
+            "server_id": server_id,
+            "status": "active",
+            "message": "Server is reachable and responding",
+            "capabilities": capabilities.model_dump()
+        }
+    except MCPClientError as e:
+        # Update status to error
+        db.update_mcp_server_status(server_id, 'error')
+
+        raise HTTPException(
+            status_code=503,
+            detail=f"Server verification failed: {str(e)}"
+        )
 
 
 # -----------------------------
