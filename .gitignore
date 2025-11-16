@@ -208,3 +208,4 @@ __marimo__/
 .DS_Store
 backend/app/src/agent_hub_nosql.json
 backend/app/src/*.db
+backend/app/agent_reg.db

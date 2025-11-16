@@ -12,8 +12,10 @@ import {
   DocumentTextIcon,
   ChatBubbleBottomCenterTextIcon,
   ChevronDownIcon,
-  ChevronUpIcon
+  ChevronUpIcon,
+  BeakerIcon
 } from '@heroicons/react/24/outline';
+import ToolTesterModal from './ToolTesterModal';
 
 interface MCPServerCardProps {
   server: MCPServer;
@@ -26,6 +28,7 @@ const MCPServerCard: React.FC<MCPServerCardProps> = ({ server, onDelete, onVerif
   const [showTools, setShowTools] = useState(false);
   const [showResources, setShowResources] = useState(false);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [showToolTester, setShowToolTester] = useState(false);
 
   const getStatusColor = () => {
     switch (server.status) {
@@ -244,6 +247,15 @@ const MCPServerCard: React.FC<MCPServerCardProps> = ({ server, onDelete, onVerif
 
       {/* Action Buttons */}
       <div className="flex space-x-2">
+        {toolsCount > 0 && (
+          <button
+            onClick={() => setShowToolTester(true)}
+            className="flex-1 flex items-center justify-center px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <BeakerIcon className="h-4 w-4 mr-2" />
+            Test Tools
+          </button>
+        )}
         <button
           onClick={() => onVerify(server.id)}
           className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
@@ -262,6 +274,13 @@ const MCPServerCard: React.FC<MCPServerCardProps> = ({ server, onDelete, onVerif
           <TrashIcon className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Tool Tester Modal */}
+      <ToolTesterModal
+        isOpen={showToolTester}
+        onClose={() => setShowToolTester(false)}
+        server={server}
+      />
     </div>
   );
 };

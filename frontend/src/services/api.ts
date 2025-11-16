@@ -14,7 +14,15 @@ import {
   MCPSearchResult,
   MCPVerificationResponse,
   MCPServerType,
-  MCPServerStatus
+  MCPServerStatus,
+  ConnectionStatus,
+  GatewayHealthResponse,
+  JSONRPCRequest,
+  JSONRPCResponse,
+  ToolCallRequest,
+  ToolCallResponse,
+  ResourceReadRequest,
+  PromptGetRequest
 } from '../types/mcp';
 
 // Base API URL - can be configured via environment variables
@@ -118,6 +126,77 @@ export class MCPAPI {
   // Delete an MCP server
   static async deleteServer(serverId: string): Promise<void> {
     await apiClient.delete(`/mcp/servers/${serverId}`);
+  }
+
+  // Gateway Methods
+
+  // Get connection status for a specific server
+  static async getConnectionStatus(serverId: string): Promise<ConnectionStatus> {
+    const response = await apiClient.get<ConnectionStatus>(`/mcp/gateway/${serverId}/status`);
+    return response.data;
+  }
+
+  // Get overall gateway health
+  static async getGatewayHealth(): Promise<GatewayHealthResponse> {
+    const response = await apiClient.get<GatewayHealthResponse>('/mcp/gateway/health');
+    return response.data;
+  }
+
+  // Send a JSON-RPC message to a server through the gateway
+  static async sendMessage(serverId: string, message: JSONRPCRequest): Promise<JSONRPCResponse> {
+    const response = await apiClient.post<JSONRPCResponse>(`/mcp/gateway/${serverId}/message`, message);
+    return response.data;
+  }
+
+  // Call a tool on a specific server
+  static async callTool(serverId: string, toolName: string, request: ToolCallRequest): Promise<ToolCallResponse> {
+    const response = await apiClient.post<ToolCallResponse>(
+      `/mcp/gateway/${serverId}/tools/${toolName}`,
+      request
+    );
+    return response.data;
+  }
+
+  // Read a resource from a specific server
+  static async readResource(serverId: string, request: ResourceReadRequest): Promise<any> {
+    const response = await apiClient.post(`/mcp/gateway/${serverId}/resources/read`, request);
+    return response.data;
+  }
+
+  // Get a prompt from a specific server
+  static async getPrompt(serverId: string, request: PromptGetRequest): Promise<any> {
+    const response = await apiClient.post(`/mcp/gateway/${serverId}/prompts/get`, request);
+    return response.data;
+  }
+
+  // List tools via gateway (convenience method using sendMessage)
+  static async listTools(serverId: string): Promise<any> {
+    return this.sendMessage(serverId, {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/list',
+      params: {}
+    });
+  }
+
+  // List resources via gateway (convenience method using sendMessage)
+  static async listResources(serverId: string): Promise<any> {
+    return this.sendMessage(serverId, {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'resources/list',
+      params: {}
+    });
+  }
+
+  // List prompts via gateway (convenience method using sendMessage)
+  static async listPrompts(serverId: string): Promise<any> {
+    return this.sendMessage(serverId, {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'prompts/list',
+      params: {}
+    });
   }
 }
 

@@ -25,16 +25,18 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query, Path, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, HttpUrl
-from .database import AgentDatabase
+from database import AgentDatabase
 from jsonschema import ValidationError
 import logging as logger
-from .agent_card_validator import AgentCardValidator
-from .agent_card_models import AgentCreate, AgentUpdate
-from .mcp_models import (
+from agent_card_validator import AgentCardValidator
+from agent_card_models import AgentCreate, AgentUpdate
+from mcp_models import (
     MCPServerRegister, MCPServerResponse, MCPSearchQuery,
     MCPSearchResult, MCPServerCapabilities
 )
-from .mcp_client import MCPClient, MCPClientError, test_mcp_connection
+from mcp_client import MCPClient, MCPClientError, test_mcp_connection
+from mcp_gateway_routes import router as gateway_router
+from mcp_connection_manager import initialize_connection_manager, get_connection_manager
 
 from dotenv import load_dotenv
 
@@ -66,6 +68,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# -----------------------------
+# MCP Gateway Connection Manager
+# -----------------------------
+connection_manager = initialize_connection_manager(db)
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the MCP connection manager on application startup"""
+    await connection_manager.start()
+    logger.info("MCP Gateway connection manager started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully shutdown all MCP connections on application shutdown"""
+    await connection_manager.stop()
+    logger.info("MCP Gateway connection manager stopped")
 
 # -----------------------------
 # Helpers
@@ -213,19 +232,20 @@ async def register_mcp_server(server_data: MCPServerRegister):
     config = server_data.get_config()
 
     # Test connection and discover capabilities
-    try:
-        client = MCPClient(server_data.type, config)
-        capabilities = await client.discover_capabilities()
-    except MCPClientError as e:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Failed to connect to MCP server: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error connecting to MCP server: {str(e)}"
-        )
+    # try:
+    client = MCPClient(server_data.type, config)
+    capabilities = await client.discover_capabilities()
+    # except MCPClientError as e:
+
+    #     raise HTTPException(
+    #         status_code=422,
+    #         detail=f"Failed to connect to MCP server: {str(e)}"
+    #     )
+    # except Exception as e:
+    #     raise HTTPException(
+    #         status_code=500,
+    #         detail=f"Unexpected error connecting to MCP server: {str(e)}"
+    #     )
 
     # Generate server ID and store in database
     server_id = str(uuid4())
@@ -359,6 +379,13 @@ async def verify_mcp_server(server_id: str = Path(..., description="MCP Server I
             status_code=503,
             detail=f"Server verification failed: {str(e)}"
         )
+
+
+# -----------------------------
+# MCP Gateway Routes
+# -----------------------------
+# Include the gateway router for HTTP/SSE proxy endpoints
+app.include_router(gateway_router)
 
 
 # -----------------------------

@@ -107,3 +107,62 @@ export interface MCPVerificationResponse {
   message: string;
   capabilities?: MCPServerCapabilities;
 }
+
+// Gateway Types
+export type ConnectionState = 'connected' | 'disconnected' | 'connecting' | 'error';
+
+export interface ConnectionStatus {
+  server_id: string;
+  state: ConnectionState;
+  connected_at?: string;
+  last_activity?: string;
+  error?: string;
+}
+
+export interface GatewayHealthResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  total_connections: number;
+  active_connections: number;
+  failed_connections: number;
+  connection_details: Record<string, ConnectionStatus>;
+}
+
+export interface JSONRPCRequest {
+  jsonrpc: string;
+  id?: string | number;
+  method: string;
+  params?: Record<string, any>;
+}
+
+export interface JSONRPCResponse {
+  jsonrpc: string;
+  id?: string | number;
+  result?: any;
+  error?: {
+    code: number;
+    message: string;
+    data?: any;
+  };
+}
+
+export interface ToolCallRequest {
+  arguments?: Record<string, any>;
+}
+
+export interface ToolCallResponse {
+  content: Array<{
+    type: string;
+    text?: string;
+    [key: string]: any;
+  }>;
+  isError?: boolean;
+}
+
+export interface ResourceReadRequest {
+  uri: string;
+}
+
+export interface PromptGetRequest {
+  name: string;
+  arguments?: Record<string, any>;
+}

@@ -10,7 +10,7 @@ from typing import Dict, Any
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.streamable_http import streamablehttp_client
-from .mcp_models import MCPServerCapabilities
+from mcp_models import MCPServerCapabilities
 
 
 class MCPClientError(Exception):
@@ -95,7 +95,7 @@ class MCPClient:
                         resources_result = await session.list_resources()
                         resources = [
                             {
-                                "uri": resource.uri,
+                                "uri": str(resource.uri),  # Convert AnyUrl to string
                                 "name": resource.name,
                                 "description": resource.description if hasattr(resource, 'description') else None,
                                 "mimeType": resource.mimeType if hasattr(resource, 'mimeType') else None
@@ -179,7 +179,7 @@ class MCPClient:
                         resources_result = await session.list_resources()
                         resources = [
                             {
-                                "uri": resource.uri,
+                                "uri": str(resource.uri),  # Convert AnyUrl to string
                                 "name": resource.name,
                                 "description": resource.description if hasattr(resource, 'description') else None,
                                 "mimeType": resource.mimeType if hasattr(resource, 'mimeType') else None
